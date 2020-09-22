@@ -1,202 +1,107 @@
 #!/usr/bin/env python
 
 import numpy as np
-from scipy.signal import butter, lfilter
-from scipy import stats
+from typing import Any, Dict, List
 
-def detect_peaks(ecg_measurements,signal_frequency,gain):
+from info_tools import get_info_measures
 
-        """
-        Method responsible for extracting peaks from loaded ECG measurements data through measurements processing.
+def get_12ECG_metadata(
+        header: List[str]
+    ) -> Dict[str, Any]:
+    """
+    Given the contents of a .hea file, extract relevant data about the
+    signal and the patient as well as the label(s) for that sample
 
-        This implementation of a QRS Complex Detector is by no means a certified medical tool and should not be used in health monitoring. 
-        It was created and used for experimental purposes in psychophysiology and psychology.
-        You can find more information in module documentation:
-        https://github.com/c-labpl/qrs_detector
-        If you use these modules in a research project, please consider citing it:
-        https://zenodo.org/record/583770
-        If you use these modules in any other project, please refer to MIT open-source license.
+    Params
+    ------
+    header
+        the contents of a .hea file as a list of strings representing
+        each line in the file, for example:
 
-        If you have any question on the implementation, please refer to:
+        A0003 12 500 5000 12-May-2020 12:33:59
+        A0003.mat 16+24 1000/mV 16 0 43 64 0 I
+        A0003.mat 16+24 1000/mV 16 0 8 42 0 II
+        A0003.mat 16+24 1000/mV 16 0 -35 -29 0 III
+        A0003.mat 16+24 1000/mV 16 0 -25 -56 0 aVR
+        A0003.mat 16+24 1000/mV 16 0 38 -6 0 aVL
+        A0003.mat 16+24 1000/mV 16 0 -14 12 0 aVF
+        A0003.mat 16+24 1000/mV 16 0 32 23 0 V1
+        A0003.mat 16+24 1000/mV 16 0 65 38 0 V2
+        A0003.mat 16+24 1000/mV 16 0 39 23 0 V3
+        A0003.mat 16+24 1000/mV 16 0 42 50 0 V4
+        A0003.mat 16+24 1000/mV 16 0 13 16 0 V5
+        A0003.mat 16+24 1000/mV 16 0 -14 24 0 V6
+        #Age: 81
+        #Sex: Female
+        #Dx: 164889003
+        #Rx: Unknown
+        #Hx: Unknown
+        #Sx: Unknown
 
-        Michal Sznajder (Jagiellonian University) - technical contact (msznajder@gmail.com)
-        Marta lukowska (Jagiellonian University)
-        Janko Slavic peak detection algorithm and implementation.
-        https://github.com/c-labpl/qrs_detector
-        https://github.com/jankoslavic/py-tools/tree/master/findpeaks
-        
-        MIT License
-        Copyright (c) 2017 Michal Sznajder, Marta Lukowska
-    
-        Permission is hereby granted, free of charge, to any person obtaining a copy
-        of this software and associated documentation files (the "Software"), to deal
-        in the Software without restriction, including without limitation the rights
-        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-        copies of the Software, and to permit persons to whom the Software is
-        furnished to do so, subject to the following conditions:
-        The above copyright notice and this permission notice shall be included in all
-        copies or substantial portions of the Software.
-        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-        SOFTWARE.
+    Returns
+    ------
+    the relevant metadata in the form of a dictionary
+    """
+    meta_dict = dict()
 
-        """
+    # extract subject ID and sample rate from the first line
+    tmp_hea = header[0].split(' ')
+    meta_dict['subject']     = tmp_hea[0]
+    meta_dict['sample_rate'] = int(tmp_hea[2])
 
+    for line in header:
+        if ': ' in line:
+            value = line.split(': ')[1].strip()
 
-        filter_lowcut = 0.001
-        filter_highcut = 15.0
-        filter_order = 1
-        integration_window = 30  # Change proportionally when adjusting frequency (in samples).
-        findpeaks_limit = 0.35
-        findpeaks_spacing = 100  # Change proportionally when adjusting frequency (in samples).
-        refractory_period = 240  # Change proportionally when adjusting frequency (in samples).
-        qrs_peak_filtering_factor = 0.125
-        noise_peak_filtering_factor = 0.125
-        qrs_noise_diff_weight = 0.25
+        if line.startswith('#Age'):
+            # negative age will be replaced with average value after preprocessing
+            meta_dict['age'] = int(value if value != 'NaN' else -1)
+        elif line.startswith('#Sex'):
+            # one-hot encoding: categorical data is used as booleans
+            meta_dict['female'] = 1 if value == 'Female' else 0
+            meta_dict['male']   = 1 if value == 'Male'   else 0
+        elif line.startswith('#Dx'):
+            meta_dict['label'] = value.split(',')[0]
 
-
-        # Detection results.
-        qrs_peaks_indices = np.array([], dtype=int)
-        noise_peaks_indices = np.array([], dtype=int)
-
-
-        # Measurements filtering - 0-15 Hz band pass filter.
-        filtered_ecg_measurements = bandpass_filter(ecg_measurements, lowcut=filter_lowcut, highcut=filter_highcut, signal_freq=signal_frequency, filter_order=filter_order)
-
-        filtered_ecg_measurements[:5] = filtered_ecg_measurements[5]
-
-        # Derivative - provides QRS slope information.
-        differentiated_ecg_measurements = np.ediff1d(filtered_ecg_measurements)
-
-        # Squaring - intensifies values received in derivative.
-        squared_ecg_measurements = differentiated_ecg_measurements ** 2
-
-        # Moving-window integration.
-        integrated_ecg_measurements = np.convolve(squared_ecg_measurements, np.ones(integration_window)/integration_window)
-
-        # Fiducial mark - peak detection on integrated measurements.
-        detected_peaks_indices = findpeaks(data=integrated_ecg_measurements,
-                                                     limit=findpeaks_limit,
-                                                     spacing=findpeaks_spacing)
-
-        detected_peaks_values = integrated_ecg_measurements[detected_peaks_indices]
-
-        return detected_peaks_values,detected_peaks_indices
-
- 
-def bandpass_filter(data, lowcut, highcut, signal_freq, filter_order):
-        """
-        Method responsible for creating and applying Butterworth filter.
-        :param deque data: raw data
-        :param float lowcut: filter lowcut frequency value
-        :param float highcut: filter highcut frequency value
-        :param int signal_freq: signal frequency in samples per second (Hz)
-        :param int filter_order: filter order
-        :return array: filtered data
-        """
-        nyquist_freq = 0.5 * signal_freq
-        low = lowcut / nyquist_freq
-        high = highcut / nyquist_freq
-        b, a = butter(filter_order, [low, high], btype="band")
-        y = lfilter(b, a, data)
-        return y
-
-def findpeaks(data, spacing=1, limit=None):
-        """
-        Janko Slavic peak detection algorithm and implementation.
-        https://github.com/jankoslavic/py-tools/tree/master/findpeaks
-        Finds peaks in `data` which are of `spacing` width and >=`limit`.
-        :param ndarray data: data
-        :param float spacing: minimum spacing to the next peak (should be 1 or more)
-        :param float limit: peaks should have value greater or equal
-        :return array: detected peaks indexes array
-        """
-        len = data.size
-        x = np.zeros(len + 2 * spacing)
-        x[:spacing] = data[0] - 1.e-6
-        x[-spacing:] = data[-1] - 1.e-6
-        x[spacing:spacing + len] = data
-        peak_candidate = np.zeros(len)
-        peak_candidate[:] = True
-        for s in range(spacing):
-            start = spacing - s - 1
-            h_b = x[start: start + len]  # before
-            start = spacing
-            h_c = x[start: start + len]  # central
-            start = spacing + s + 1
-            h_a = x[start: start + len]  # after
-            peak_candidate = np.logical_and(peak_candidate, np.logical_and(h_c > h_b, h_c > h_a))
-
-        ind = np.argwhere(peak_candidate)
-        ind = ind.reshape(ind.size)
-        if limit is not None:
-            ind = ind[data[ind] > limit]
-        return ind
+    return meta_dict
 
 
-def get_12ECG_features(data, header_data):
+def get_12ECG_features(
+        data: np.ndarray,
+        header: List[str]
+    ) -> Dict[str, np.float64]:
+    """
+    Given the contents of a .hea file, extract relevant data about the
+    signal and the patient as well as the label(s) for that sample
 
-    tmp_hea = header_data[0].split(' ')
-    ptID = tmp_hea[0]
-    num_leads = int(tmp_hea[1])
-    sample_Fs= int(tmp_hea[2])
-    gain_lead = np.zeros(num_leads)
-    
-    for ii in range(num_leads):
-        tmp_hea = header_data[ii+1].split(' ')
-        gain_lead[ii] = int(tmp_hea[2].split('/')[0])
+    Params
+    ------
+    data
+        raw 12-lead ECG signal in a np.array of shape (12, N) and dtype
+        np.float64 for a signal of length N over 12 leads
+    header
+        the contents of a .hea file containing metadata about the 12-lead
+        signal as a list of strings representing each line in the file
 
-    # for testing, we included the mean age of 57 if the age is a NaN
-    # This value will change as more data is being released
-    for iline in header_data:
-        if iline.startswith('#Age'):
-            tmp_age = iline.split(': ')[1].strip()
-            age = int(tmp_age if tmp_age != 'NaN' else 57)
-        elif iline.startswith('#Sex'):
-            tmp_sex = iline.split(': ')[1]
-            if tmp_sex.strip()=='Female':
-                sex =1
-            else:
-                sex=0
-#        elif iline.startswith('#Dx'):
-#            label = iline.split(': ')[1].split(',')[0]
+    Returns
+    ------
+    dictionary with the feature names as key and float values for feats
+    which will be properly typed for xgboost in the preprocessing phase
+    """
+    meta_dict = get_12ECG_metadata(header)
 
+    # for very long recordings, only extract features from the first 60 sec
+    T = int(60 * meta_dict['sample_rate'])
+    data = data.T
+    if (len(data) > T):
+        data = data[:T]
 
-    
-#   We are only using data from lead1
-    peaks,idx = detect_peaks(data[0],sample_Fs,gain_lead[0])
-   
-#   mean
-    mean_RR = np.mean(idx/sample_Fs*1000)
-    mean_Peaks = np.mean(peaks*gain_lead[0])
+    # construct feature dictionary
+    feats_dict = dict()
 
-#   median
-    median_RR = np.median(idx/sample_Fs*1000)
-    median_Peaks = np.median(peaks*gain_lead[0])
+    feats_dict.update({ k: meta_dict[k] for k in ['age', 'male', 'female' ] })
 
-#   standard deviation
-    std_RR = np.std(idx/sample_Fs*1000)
-    std_Peaks = np.std(peaks*gain_lead[0])
+    info_dict = get_info_measures(data, meta_dict['sample_rate'])
+    feats_dict.update(info_dict)
 
-#   variance
-    var_RR = stats.tvar(idx/sample_Fs*1000)
-    var_Peaks = stats.tvar(peaks*gain_lead[0])
-
-#   Skewness
-    skew_RR = stats.skew(idx/sample_Fs*1000)
-    skew_Peaks = stats.skew(peaks*gain_lead[0])
-
-#   Kurtosis
-    kurt_RR = stats.kurtosis(idx/sample_Fs*1000)
-    kurt_Peaks = stats.kurtosis(peaks*gain_lead[0])
-
-    features = np.hstack([age,sex,mean_RR,mean_Peaks,median_RR,median_Peaks,std_RR,std_Peaks,var_RR,var_Peaks,skew_RR,skew_Peaks,kurt_RR,kurt_Peaks])
-
-  
-    return features
-
-
+    return feats_dict
