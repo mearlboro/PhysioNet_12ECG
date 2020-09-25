@@ -5,6 +5,7 @@ from pandas import DataFrame
 from typing import Any, Dict, List
 
 from info_tools import get_info_measures
+from heart_tools import get_ECG_measures
 
 
 def get_12ECG_metadata(
@@ -104,6 +105,8 @@ def get_12ECG_features(
 
     # construct feature dictionary
     feats_dict = dict()
+    ecg_dict = get_ECG_measures(data, fs)
+    feats_dict.update(ecg_dict)
 
     info_dict = get_info_measures(data, fs)
     feats_dict.update(info_dict)
