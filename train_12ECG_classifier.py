@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import logging
 import numpy as np
 from pandas import concat, DataFrame, read_csv
 from os import listdir
@@ -10,6 +11,8 @@ from typing import Any, Dict, List, Tuple
 from get_12ECG_features import get_12ECG_features, init_12ECG_features, get_12ECG_metadata
 from XGB import xgb_train, xgb_test, grid_search, resample_train_data, load_params
 
+logging.basicConfig(filename = 'train.log', filemode = 'w', level = logging.INFO,
+                    format = '%(asctime)s %(levelname)s %(message)s')
 
 def load_mat_data(hea_file: str) -> np.ndarray:
     """
@@ -180,6 +183,7 @@ def get_training_data(indir: str) -> Tuple[DataFrame, DataFrame]:
     and the feature names and SNOMED codes as column names respectively
     """
     # Read all headers first
+    logging.info('Loading header data...')
     hea_files = []
     for fname in listdir(indir):
         path = join(indir, fname)
@@ -190,14 +194,17 @@ def get_training_data(indir: str) -> Tuple[DataFrame, DataFrame]:
         with open(hea, 'r') as f:
             headers.append(f.readlines())
 
-    # Extract unique conditions from the headers
-    # and filter only for scored ones and removing equivalent
+    # Get conditions, filter only for scored ones and removing equivalent
+    logging.info('Getting scored conditions, removing equivalent ones')
     all_conds = get_conds(headers, only_scored = True, no_equiv = True)
 
     # save subjects, features and labels into lists
     subjects, features, labels = [], [], []
 
+    logging.info('Processing raw recoding files...')
+
     for i, hea in enumerate(hea_files):
+        logging.info(f'Processing file {i}:{hea}')
         data = load_mat_data(hea)
 
         # extract features and save in df with feature names as columns
@@ -210,6 +217,8 @@ def get_training_data(indir: str) -> Tuple[DataFrame, DataFrame]:
         labels.append(init_labels(meta_dict['conds'], all_conds))
 
     # create dataframe of features and labels
+    logging.info('Done loading files and extracting features.')
+
     dfeats = DataFrame(features)
     dfeats.index = subjects
     dlabel = DataFrame(labels)
@@ -258,15 +267,19 @@ def train_12ECG_condition_classifier(
     x, y = resample_train_data(dfeats, dlabs, 'under')
 
     if optimise:
+        logging.info(f'Optimising parameters.')
         # optimise parameters with grid search and cross-validation
         params = grid_search(cond, x, y, k = 2, save = True)
     else:
+        logging.info(f'Loading pre-optimised parameters.')
         params = load_params(cond)
 
     # train again using above params and a small subset of data for testing
+    logging.info(f'Training model...')
     model = xgb_train(x, y, params, test_size = 0.1)
 
     # save trained model
+    logging.info(f'Saving model...')
     model.save_model(f'{outdir}/{cond}.model')
 
 
@@ -296,5 +309,6 @@ def train_12ECG_classifier(indir: str, outdir: str):
     conds = dlabels.columns.values.astype(str)
 
     for cond in conds:
+        logging.info(f'Training XGB for {cond}')
         dlabel = dlabels[cond].astype(int)
         train_12ECG_condition_classifier(cond, dfeats, dlabel, outdir)
