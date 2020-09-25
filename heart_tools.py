@@ -34,28 +34,24 @@ def get_qrs_props(
     dictionary with feature names as strings and int or float values
     """
 
-    qrs_win = int(0.1 * fs)
+    qrs_win = int(0.1 * fs) #Defined window length of qrs
     if (qrs[qrs_win] < 0):
         qrs = -1 * qrs
 
     r_peak = np.argmax(qrs)
-
-    # TODO: define those magic numbers in variables that describe what they are
-    # and add comments explaining why they have that value (0.04 , 0.16, also 0.75
-    # below on line 68)
     minima0 = argrelextrema(qrs[:qrs_win], np.less)[0]
     vals0 = qrs[minima0]
     if (len(minima0) > 0):
         q_peak = minima0[np.argmin(vals0)]
     else:
-        q_peak = int(0.04 * fs)
+        q_peak = int(0.04 * fs) #default  mean q peak position
 
     minima1 = argrelextrema(qrs[qrs_win:], np.less)[0]
     vals1 = qrs[qrs_win + minima1]
     if (len(minima1) > 0):
         s_peak = qrs_win + minima1[np.argmin(vals1)]
     else:
-        s_peak = int(0.16 * fs)
+        s_peak = int(0.16 * fs) #default  mean s peak position
 
     qrs_dict = dict()
     qrs_dict['qrs_height'] = max(qrs) - min(qrs)
@@ -70,7 +66,7 @@ def get_qrs_props(
     qrs_dict['qrs_axis']  = qrs_dict['rval_norm'] - qrs_dict['sval_norm']
     qrs_dict['qs_height'] = qrs_dict['sval'] - qrs_dict['qval']
 
-    q_width,_,q_beg,_ = peak_widths(-1 * qrs,[q_peak], 0.75)
+    q_width,_,q_beg,_ = peak_widths(-1 * qrs,[q_peak], 0.75) #Calculating with at quarter maxima to avoid overlap
     s_width,_,_,s_end = peak_widths(-1 * qrs,[s_peak], 0.75)
     r_width,_,_,_     = peak_widths(qrs, [r_peak], 1)
 
@@ -98,12 +94,7 @@ def get_qrs_props(
     qrs_dict['s_peak'] = s_peak - r_peak
     qrs_dict['q_beg'] = q_beg - r_peak
     qrs_dict['s_end'] = s_end - r_peak
-
-    #props = [height, width, mean, std, qrs_iqr, qrs_iqr_norm, sk,
-    #    kurt, qval, rval, sval, q_width, r_width, s_width, asymmetry, qs_height, r_sign]
-    #return props, [q_peak - r_peak, s_peak - r_peak], [q_beg - r_peak, s_end - r_peak]
-    # TODO: the second and third params can also be included in the dict
-    # but i didn't know what names to use
+    
     return qrs_dict
 
 
@@ -133,8 +124,7 @@ def get_p_props(
     p_dict['p_sign'] = np.sign(p_wave[qrs_win])
     p_dict['p_height'] = max(p_wave)
 
-    # TODO: explain why the 5 is a magic num
-    peak = (qrs_win - 5) + np.argmax(p_wave[qrs_win-5: qrs_win+5])
+    peak = (qrs_win - 5) + np.argmax(p_wave[qrs_win-5: qrs_win+5]) # Searching a small neighborhood around center
     p_peak_props = peak_widths(p_wave, [peak], 0.75)
     p_beg = int(p_peak_props[2][0])
     p_end = int(p_peak_props[3][0])
@@ -147,8 +137,6 @@ def get_p_props(
     p_dict['p_beg'] = p_beg - peak
     p_dict['p_end'] = p_end - peak
 
-    # TODO: same as above rearding the two values after the list
-    # return [p_width, pval, p_prom, p_asymmetry, p_sign], p_beg - peak, p_end - peak
     return p_dict
 
 def get_t_props(t_wave,
@@ -187,7 +175,7 @@ def get_t_props(t_wave,
     t_dict['t_asymmetry'] = (t_end - peak)/(peak - t_beg)
     t_dict['t_beg'] = t_beg - peak
     t_dict['t_end'] = t_end - peak
-    #return [t_width, tval, t_prom, t_asymmetry, t_sign], t_beg - peak, t_end - peak
+    
     return t_dict
 
 def get_dist_props(data, q_begs, r_peaks, s_ends, t_begs, t_ends, p_begs, p_ends, m_hrs, fs):
@@ -256,11 +244,6 @@ def get_dist_props(data, q_begs, r_peaks, s_ends, t_begs, t_ends, p_begs, p_ends
     props['qr_dist_std'] = np.std(qr_dist)
     props['qr_dist_iqr'] = iqr(qr_dist,nan_policy='omit')
 
-    #rs_dist = (s_ends[:min_len] - r_peaks[:min_len])/fs
-    #props['rs_dist_mean'] = np.mean(rs_dist)
-    #props['rs_dist_std'] = np.mean(rs_dist)
-    #props['rs_dist_iqr'] = iqr(rs_dist, nan_policy='omit')
-
     sq_lens = [(q_begs[i+1] - s_ends[i])/fs for i in range(len(s_ends)-1)]
     props['sq_dist_mean'] = np.nanmean(sq_lens)
     props['sq_dist_std'] = np.nanstd(sq_lens)
@@ -274,9 +257,7 @@ def get_dist_props(data, q_begs, r_peaks, s_ends, t_begs, t_ends, p_begs, p_ends
     st_seg = [data[s_ends[i]:t_begs[i]] for i in range(len(t_begs)-1)]
     st_slopes = [np.mean(np.diff(i)) for i in st_seg]
     st_curve = [np.mean(np.diff(i,2)) for i in st_seg]
-    #st_avg = [np.mean(i) for i in st_seg]
-    #st_dev = [np.std(i) for i in st_seg]
-    #st_dist = [(t_ends[i] - s_ends[i])/fs for i in range(len(t_ends))]
+    
     tp_dist = [(p_begs[i] - t_ends[i])/fs for i in range(len(p_begs))]
     qt_dist = [(t_ends[i] - q_begs[i])/fs for i in range(len(t_ends))]
 
@@ -284,12 +265,7 @@ def get_dist_props(data, q_begs, r_peaks, s_ends, t_begs, t_ends, p_begs, p_ends
     props['st_slope_std'] = np.nanstd(st_slopes)
     props['st_curve_mean'] = np.nanmean(st_curve)
     props['st_curve_std'] = np.nanstd(st_curve)
-    #props['st_avg_mean'] = np.nanmean(st_avg)
-    #props['st_avg_std'] = np.nanstd(st_avg)
-    #props['st_dev_mean'] = np.nanmean(st_dev)
-    #props['st_dev_std'] = np.nanstd(st_dev)
-    #props['st_dist_mean'] = np.nanmean(st_dist)
-    #props['st_dist_std'] = np.nanstd(st_dist)
+    
     props['tp_dist_mean'] = np.nanmean(tp_dist)
     props['tp_dist_std'] = np.nanstd(tp_dist)
     props['qt_dist_mean'] = np.nanmean(qt_dist)
@@ -297,9 +273,7 @@ def get_dist_props(data, q_begs, r_peaks, s_ends, t_begs, t_ends, p_begs, p_ends
 
     props['st_slope_iqr'] = iqr(st_slopes,nan_policy='omit')
     props['st_curve_iqr'] = iqr(st_curve,nan_policy='omit')
-    #props['st_avg_iqr'] = iqr(st_avg,nan_policy='omit')
-    #props['st_dev_iqr'] = iqr(st_dev,nan_policy='omit')
-    #props['st_dist_iqr'] = iqr(st_dist,nan_policy='omit')
+    
     props['tp_dist_iqr'] = iqr(tp_dist,nan_policy='omit')
     props['qt_dist_iqr'] = iqr(qt_dist,nan_policy='omit')
     
@@ -310,23 +284,12 @@ def get_dist_props(data, q_begs, r_peaks, s_ends, t_begs, t_ends, p_begs, p_ends
         props[pname+'_mean_norm'] = props[pname+'_mean']/m_hrs
         props[pname+'_iqr_norm'] = props[pname+'_iqr']/m_hrs
         props[pname+'_mean_rootnorm'] = props[pname+'_mean']/np.sqrt(m_hrs)
-        #props[pname+'_iqr_rootnorm'] = props[pname+'_iqr']/np.sqrt(m_hrs)
         
     prop_names_all = list(props.keys())
     prop_names_final = [i for i in prop_names_all if i.split('_')[-1]=='norm' or i.split('_')[-1]=='rootnorm']
     props_final = {i:props[i] for i in prop_names_final}
 
-    '''
-    prop_means = [qr_dist_mean, rs_dist_mean, sq_dist_mean, pr_dist_mean, st_slope_mean, st_curve_mean,
-                  st_avg_mean, st_dev_mean, st_dist_mean, tp_dist_mean, qt_dist_mean]
-
-    prop_stds = [qr_dist_std, rs_dist_std, sq_dist_std, pr_dist_std, st_slope_std, st_curve_std,
-                 st_avg_std, st_dev_std, st_dist_std, tp_dist_std, qt_dist_std]
-
-    prop_iqr = [qr_dist_iqr, rs_dist_iqr, sq_dist_iqr, pr_dist_iqr, st_slope_iqr, st_curve_iqr,
-                 st_avg_iqr, st_dev_iqr, st_dist_iqr, tp_dist_iqr, qt_dist_iqr]
-    '''
-    return props_final, props['qt_dist_mean']
+    return props_final, props['qt_dist_mean'] #qt distance is needed for calculating qt_corr in peak_measures
 
 def sign_interactions(signs1, signs2):
     '''
@@ -595,7 +558,7 @@ def get_peak_measures(data,fs, lead):
         
     else:
         peak_props = dict()
-        #peak_measures = [np.nan for i in range(147)]
+       
     return peak_props
 
 
@@ -636,7 +599,7 @@ def get_power_measures(data,fs, lead):
     
     pow_props = add_lead_str(pow_props, lead)
     
-    return pow_props #power_abs.tolist() + ratios.tolist() + [m_power,std_power,iqr_power,max_power,min_power]
+    return pow_props 
 
 def get_ECG_measures(data, fs):
     '''

@@ -113,7 +113,7 @@ def get_12ECG_features(
 
     # include patient metadata as well as subject ID (same as file name)
     feats_dict.update({ k: meta_dict[k]
-                        for k in ['age', 'male', 'female'] })
+                        for k in ['age', 'male', 'female', 'subject'] })
 
     return feats_dict
 
