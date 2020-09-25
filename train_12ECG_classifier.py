@@ -125,7 +125,6 @@ def get_conds(
 
 
 def init_labels(
-        subject: str,
         conds_str: str,
         all_conds: List[str]
     ) -> DataFrame:
@@ -147,11 +146,10 @@ def init_labels(
 
     Returns
     ------
-    DataFrame containing columns identifying all conditions and values
+    np.ndarray containing columns identifying all conditions and values
     of 0 and 1, 1 if the sample has been labelled with the condition
     e.g.
-           713427006    59118001    284470004   63593006
-           0            1           0           1
+                 0            1           0           1
     """
     labels = np.zeros(len(all_conds))
 
@@ -162,11 +160,7 @@ def init_labels(
             i = all_conds.index(c.rstrip()) # Only use first positive index
             labels[i] = 1
 
-    df = DataFrame(
-        labels.reshape(1, -1), columns = all_conds, dtype = int,
-        index = [subject])
-
-    return df
+    return labels
 
 
 def get_training_data(indir: str) -> Tuple[DataFrame, DataFrame]:
@@ -200,21 +194,27 @@ def get_training_data(indir: str) -> Tuple[DataFrame, DataFrame]:
     # and filter only for scored ones and removing equivalent
     all_conds = get_conds(headers, only_scored = True, no_equiv = True)
 
-    # all features and labels will be added to dataframes
-    dlabel = DataFrame(columns = all_conds)
-    dfeats = DataFrame()
+    # save subjects, features and labels into lists
+    subjects, features, labels = [], [], []
 
     for i, hea in enumerate(hea_files):
         data = load_mat_data(hea)
 
         # extract features and save in df with feature names as columns
-        fdf = init_12ECG_features(get_12ECG_features(data, headers[i]))
-        dfeats = dfeats.append(fdf)
+        feat_dict = get_12ECG_features(data, headers[i])
+        features.append(feat_dict)
 
-        # arrange labels into df with SNOMED codes as columns
         meta_dict = get_12ECG_metadata(headers[i])
-        ldf = init_labels(meta_dict['subject'], meta_dict['conds'], all_conds)
-        dlabel = dlabel.append(ldf)
+        subjects.append(meta_dict['subject'])
+        del meta_dict['subject']
+        labels.append(init_labels(meta_dict['conds'], all_conds))
+
+    # create dataframe of features and labels
+    dfeats = DataFrame(features)
+    dfeats.index = subjects
+    dlabel = DataFrame(labels)
+    dlabel.index   = subjects
+    dlabel.columns = all_conds
 
     return dfeats, dlabel
 
