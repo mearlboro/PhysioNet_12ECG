@@ -8,11 +8,12 @@ from scipy.io import loadmat
 from typing import Any, Dict, List, Tuple
 
 from get_12ECG_features import get_12ECG_features, init_12ECG_features, get_12ECG_metadata
+from XGB import xgb_train, xgb_test, grid_search, resample_train_data, load_params
 
 
 def load_mat_data(hea_file: str) -> np.ndarray:
     """
-    Loads data given header file for the corresponding .mat file
+    Loads data from header file and corresponding .mat file
 
     Params
     ------
@@ -99,7 +100,6 @@ def get_conds(
     IOError
         when the dx_mapping_scored.csv file is missing
     """
-
     all_conds = set()
     for header in headers:
         conds_str = get_12ECG_metadata(header)['conds']
@@ -156,8 +156,11 @@ def init_labels(
     labels = np.zeros(len(all_conds))
 
     for c in conds_str.split(','):
-        i = all_conds.index(c.rstrip()) # Only use first positive index
-        labels[i] = 1
+        # for training with only scored conditions, we need to check
+        # if c is in all_conds first
+        if (c in all_conds):
+            i = all_conds.index(c.rstrip()) # Only use first positive index
+            labels[i] = 1
 
     df = DataFrame(
         labels.reshape(1, -1), columns = all_conds, dtype = int,
@@ -182,21 +185,20 @@ def get_training_data(indir: str) -> Tuple[DataFrame, DataFrame]:
     dataframes used by classifier, with the subject (e.g. 'A0001') as index
     and the feature names and SNOMED codes as column names respectively
     """
-
-    # Open and read all headers first
+    # Read all headers first
     hea_files = []
     for fname in listdir(indir):
         path = join(indir, fname)
         if not path.startswith('.') and path.endswith('hea') and isfile(path):
             hea_files.append(path)
-
     headers = []
     for hea in hea_files:
         with open(hea, 'r') as f:
             headers.append(f.readlines())
 
     # Extract unique conditions from the headers
-    all_conds = get_conds(headers)
+    # and filter only for scored ones and removing equivalent
+    all_conds = get_conds(headers, only_scored = True, no_equiv = True)
 
     # all features and labels will be added to dataframes
     dlabel = DataFrame(columns = all_conds)
@@ -215,6 +217,57 @@ def get_training_data(indir: str) -> Tuple[DataFrame, DataFrame]:
         dlabel = dlabel.append(ldf)
 
     return dfeats, dlabel
+
+
+def train_12ECG_condition_classifier(
+        cond:     str,
+        dfeats:   DataFrame,
+        dlabs:    DataFrame,
+        outdir:   str,
+        optimise: bool = False
+    ):
+    """
+    Train a single XGBoost classifier for a condition
+
+    Params
+    -----
+    cond
+        condition SNOMED code to train for
+    dfeats
+        features dataframe produced by `init_12ECG_features` with float
+        values for each sample, columns signifying feature names, and
+        indexed with the subject ID
+    dlabs
+        single-column dataframe, containing 0 and 1 labels for each
+        sample to represent sample's diagnosis with the condition
+    outdir
+        directory to save the model in
+    optimise
+        if true, runs grid search to choose params, otherwise load pre-
+        optimised params from local file
+
+    Returns
+    ------
+    None
+
+    Side-effects
+    ------
+    Save XGBoost model in output directory as {cond}.model
+    """
+    # first resample and check data encoding
+    x, y = resample_train_data(dfeats, dlabs, 'under')
+
+    if optimise:
+        # optimise parameters with grid search and cross-validation
+        params = grid_search(cond, x, y, k = 2, save = True)
+    else:
+        params = load_params(cond)
+
+    # train again using above params and a small subset of data for testing
+    model = xgb_train(x, y, params, test_size = 0.1)
+
+    # save trained model
+    model.save_model(f'{outdir}/{cond}.model')
 
 
 def train_12ECG_classifier(indir: str, outdir: str):
@@ -238,9 +291,10 @@ def train_12ECG_classifier(indir: str, outdir: str):
 
     """
 
-    dfeats, dlabel = get_training_data(indir)
+    dfeats, dlabels = get_training_data(indir)
 
-    print(dfeats.head())
-    print(dlabel.head())
-    # TODO: training code here
+    conds = dlabels.columns.values.astype(str)
 
+    for cond in conds:
+        dlabel = dlabels[cond].astype(int)
+        train_12ECG_condition_classifier(cond, dfeats, dlabel, outdir)
