@@ -19,10 +19,12 @@ RUN apt-get update && \
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64/
 RUN export JAVA_HOME
 
+## Do not edit if you have a requirements.txt
+# Running copy before pip run caches python packages when docker building
+COPY ./requirements.txt /requirements.txt
+RUN pip install -r /requirements.txt
+
 ## DO NOT EDIT THESE 3 lines
 RUN mkdir /physionet
 COPY ./ /physionet
 WORKDIR /physionet
-
-## Do not edit if you have a requirements.txt
-RUN pip install -r requirements.txt

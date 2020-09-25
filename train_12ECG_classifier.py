@@ -2,6 +2,7 @@
 
 import logging
 import numpy as np
+from time import strftime, localtime
 from pandas import concat, DataFrame, read_csv
 from os import listdir
 from os.path import join, isfile, isdir
@@ -11,7 +12,8 @@ from typing import Any, Dict, List, Tuple
 from get_12ECG_features import get_12ECG_features, init_12ECG_features, get_12ECG_metadata
 from XGB import xgb_train, xgb_test, grid_search, resample_train_data, load_params
 
-logging.basicConfig(filename = 'train.log', filemode = 'w', level = logging.INFO,
+log_path = f"/logs/train_{strftime('%Y%m%d_%H%M', localtime())}.log"
+logging.basicConfig(filename = log_path, filemode = 'w', level = logging.INFO,
                     format = '%(asctime)s %(levelname)s %(message)s')
 
 def load_mat_data(hea_file: str) -> np.ndarray:

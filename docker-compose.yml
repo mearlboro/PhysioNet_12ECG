@@ -1,0 +1,23 @@
+version: "3.7"
+
+services:
+  physionet_build:
+    build: .
+    image: physionet_build
+
+  train:
+    image: physionet_build
+    volumes:
+      - ./logs:/logs
+      - ./input:/physionet/input
+      - ./model:/physionet/model
+    entrypoint: ["python", "train_model.py", "input", "model"]
+
+  driver:
+    image: physionet_build
+    volumes:
+      - ./logs:/logs
+      - ./input:/physionet/input
+      - ./model:/physionet/model
+      - ./output:/physionet/output
+    entrypoint: ["python", "driver.py", "model", "input", "output"]
