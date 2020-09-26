@@ -249,7 +249,7 @@ def grid_search(
         param_grid = param_grid,
         scoring = f2_score,
 	    # parallelise for number of cores
-        n_jobs = mp.cpu_count(),
+        n_jobs = int(mp.cpu_count()/2),
 	    # k-fold cross validation
         cv = k,
         verbose = 1,
