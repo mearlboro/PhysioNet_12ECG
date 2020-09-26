@@ -8,11 +8,12 @@ from os import listdir
 from os.path import join, isfile, isdir
 from scipy.io import loadmat
 from typing import Any, Dict, List, Tuple
+import multiprocessing
 
 from get_12ECG_features import get_12ECG_features, init_12ECG_features, get_12ECG_metadata
 from XGB import xgb_train, xgb_test, grid_search, resample_train_data, load_params
 
-log_path = f"logs/train_{strftime('%Y%m%d_%H%M', localtime())}.log"
+log_path = f"/logs/train_{strftime('%Y%m%d_%H%M', localtime())}.log"
 logging.basicConfig(filename = log_path, filemode = 'w', level = logging.INFO,
                     format = '%(asctime)s %(message)s')
 
@@ -167,6 +168,32 @@ def init_labels(
 
     return labels
 
+def process_hea_file(t) -> Tuple[dict, dict, dict]:
+    """
+    Params
+    ------
+    tuple(path, header, all_conds)
+        path:- path to hea file
+        header:- header in file
+        all_conds:- ordered list of all unique SNOMED codes
+    Returns
+    ------
+    A tuple of (subject, feature, label)
+    """
+    path, header, all_conds = t
+    logging.info(f'Processing file: {path}')
+    data = load_mat_data(path)
+
+    # extract features and save in df with feature names as columns
+    feat_dict = get_12ECG_features(data, header)
+    subject = feat_dict['subject']
+    del feat_dict['subject']
+    feature = feat_dict
+
+    meta_dict = get_12ECG_metadata(header)
+    label = init_labels(meta_dict['conds'], all_conds)
+    return (subject, feature, label)
+
 
 def get_training_data(indir: str) -> Tuple[DataFrame, DataFrame]:
     """
@@ -200,33 +227,25 @@ def get_training_data(indir: str) -> Tuple[DataFrame, DataFrame]:
     logging.info('Getting scored conditions, removing equivalent ones')
     all_conds = get_conds(headers, only_scored = True, no_equiv = True)
 
-    # save subjects, features and labels into lists
-    subjects, features, labels = [], [], []
 
-    logging.info('Processing raw recoding files...')
+    # Setup multiprocessing pool
+    num_threads = int(multiprocessing.cpu_count() / 2)
+    logging.info(f"Setting up thread pool of size {num_threads}")
+    pool = multiprocessing.Pool(num_threads)
 
-    for i, hea in enumerate(hea_files):
-        logging.info(f'Processing file {i}:{hea}')
-        data = load_mat_data(hea)
+    # Process files in parallel (maintaing order), split into chunks of 100 files
+    logging.info('Parallel processing raw recoding files...')
+    results = pool.imap(process_hea_file, zip(hea_files, headers, [all_conds]*len(headers)), 100)
+    pool.close()
 
-        # extract features and save in df with feature names as columns
-        feat_dict = get_12ECG_features(data, headers[i])
-        subjects.append(feat_dict['subject'])
-        del feat_dict['subject']
-        features.append(feat_dict)
-
-        meta_dict = get_12ECG_metadata(headers[i])
-        labels.append(init_labels(meta_dict['conds'], all_conds))
+    # unzip results into lists
+    subjects, features, labels = zip(*results)
 
     # create dataframe of features and labels
     logging.info('Done loading files and extracting features.')
 
-    dfeats = DataFrame(features)
-    dfeats.index = subjects
-    dlabel = DataFrame(labels)
-    dlabel.index   = subjects
-    dlabel.columns = all_conds
-
+    dfeats = DataFrame(features, index=subjects)
+    dlabel = DataFrame(labels, columns=all_conds, index=subjects)
     return dfeats, dlabel
 
 
