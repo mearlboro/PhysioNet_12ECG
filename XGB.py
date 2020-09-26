@@ -189,7 +189,7 @@ def xgb_test(
     # F_beta = (1 + beta^2) * prec * rec / (beta^2 * prec + rec)
     f2 = fbeta_score(
         labels, outputs, beta = 2, pos_label = 1, average = 'binary',
-        zero_division = 'warn')
+        zero_division='warn')
 
     print(f'Precision: {prec}, Recall: {rec}, Accuracy: {acc}, F2 Score: {f2}')
     print(f'Feature importance: {zip(predictors, importances)}')
@@ -299,20 +299,13 @@ def save_params(
 
     if isfile(file_params):
         # if the file exists load it and update it
-        params_dict = load_params(cond)
+        params_dict = load_params('all')
         params_dict[cond] = params
         # turn into dataframe to write back to file
-        params_df = DataFrame(params).T
+        params_df = DataFrame(params_dict).T
     else:
         # create single entry dataframe otherwise
         params_df = DataFrame({cond:params}).T
-
-    # add numeric index and make SNOMED code the first column
-    cols = params_df.columns
-    cols = ['SNOMED CT Code'] + cols
-    params_df['SNOMED CT Code'] = params_df.index
-    params_df.reindex(columns = cols)
-    params_df.index = range(len(params_df))
 
     params_df.to_csv(file_params)
 
@@ -328,31 +321,37 @@ def load_params(
 
     Params
     ------
-    cond
+    cond: { 'all', '270492004' ... }
         SNOMED code of condition params to be fetched
     file_params
         path to CSV file containing the params, in the form
 
-             , SNOMED Code, param1, param2, ..., paramN
-            0,   270492004,     10,    0.1           18
-            1,   164889003,     10,    0.2           20
-            2,   164890007,     15,    0.1           10
+                         param1, param2, ..., paramN
+              270492004,     10,    0.1           18
+              164889003,     10,    0.2           20
+              164890007,     15,    0.1           10
     """
 
-    # read the dataframe from CSV and turn into a list of dicts
+    # read the dataframe from CSV and turn into dict of dicts
+    if not isfile(file_params):
+        raise IOError(f"File not found: {file_params}")
+
     param_df = read_csv(file_params, index_col=0)
-    param_dicts = [ param_df[columns].loc[i].to_dict() for i in range(len(param_df)) ]
+    param_df.index = param_df.index.astype(str)
+    param_dict = param_df.T.to_dict()
 
-    for i in range(len(param_dicts)):
+    for c in param_dict:
         # cast to int to have correct types for XGB, the rest default to float
-        if ('max_depth' in columns):
-            param_dicts[i]['max_depth'] = int(param_dicts[i]['max_depth'])
+        if ('max_depth' in param_df.columns):
+            param_dict[c]['max_depth'] = int(param_dict[c]['max_depth'])
         # add eval metric and objective
-        param_dicts[i]['eval_metric'] = 'aucpr'
-        param_dicts[i]['objective']   = 'binary:logistic'
+        param_dict[c]['eval_metric'] = 'aucpr'
+        param_dict[c]['objective']   = 'binary:logistic'
 
-    params = { str(cond):params for (cond, params) in zip(param_df['SNOMED Code'], param_dicts) }
-
-    return params[cond]
-
-
+    if (cond == 'all'):
+        return param_dict
+    else:
+        if cond in param_dict.keys():
+            return param_dict[cond]
+        else:
+            raise ValueError(f'Condition not found: {cond}')
