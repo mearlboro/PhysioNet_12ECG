@@ -12,9 +12,9 @@ from typing import Any, Dict, List, Tuple
 from get_12ECG_features import get_12ECG_features, init_12ECG_features, get_12ECG_metadata
 from XGB import xgb_train, xgb_test, grid_search, resample_train_data, load_params
 
-log_path = f"/logs/train_{strftime('%Y%m%d_%H%M', localtime())}.log"
+log_path = f"logs/train_{strftime('%Y%m%d_%H%M', localtime())}.log"
 logging.basicConfig(filename = log_path, filemode = 'w', level = logging.INFO,
-                    format = '%(asctime)s %(levelname)s %(message)s')
+                    format = '%(asctime)s %(message)s')
 
 def load_mat_data(hea_file: str) -> np.ndarray:
     """
@@ -132,7 +132,7 @@ def get_conds(
 def init_labels(
         conds_str: str,
         all_conds: List[str]
-    ) -> DataFrame:
+    ) -> np.ndarray:
     """
     Create the label with the diagnoses for a given sample to be used
     by the classifier
@@ -156,7 +156,7 @@ def init_labels(
     e.g.
                  0            1           0           1
     """
-    labels = np.zeros(len(all_conds))
+    labels = np.zeros(len(all_conds)).astype(int)
 
     for c in conds_str.split(','):
         # for training with only scored conditions, we need to check
@@ -211,11 +211,11 @@ def get_training_data(indir: str) -> Tuple[DataFrame, DataFrame]:
 
         # extract features and save in df with feature names as columns
         feat_dict = get_12ECG_features(data, headers[i])
+        subjects.append(feat_dict['subject'])
+        del feat_dict['subject']
         features.append(feat_dict)
 
         meta_dict = get_12ECG_metadata(headers[i])
-        subjects.append(meta_dict['subject'])
-        del meta_dict['subject']
         labels.append(init_labels(meta_dict['conds'], all_conds))
 
     # create dataframe of features and labels
